@@ -50,3 +50,10 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+
+# General
+/main.c
+/platform.h
+/CMakeLists.txt
+cmake-build-*/
+.idea/
