@@ -3,4 +3,6 @@ To run the code specify:
 2. Input file name
 3. Output file name
 
-Example: 
+Example:
+- enc corpus/bib corpus_enc/bib
+- dec corpus_enc/bib corpus_dec/bib
