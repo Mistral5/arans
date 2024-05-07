@@ -1,7 +1,6 @@
 #ifndef ARANS_ARANS_H
 #define ARANS_ARANS_H
 
-
 //process configuration
 #ifdef ARANS_STATIC
     #define STORAGE_SPEC static
@@ -13,7 +12,6 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdalign.h>
-#include <string.h>
 
 //constants
 #ifndef RATE_BITS
@@ -60,6 +58,8 @@ static size_t encChunk(uint32_t[CDF_SIZE], unsigned char *, size_t, const unsign
 
 static int encPut(uint32_t *, unsigned char **, struct range, const unsigned char *);
 
+static size_t putOriginalSize(unsigned char *, size_t);
+
 static int encFlush(const uint32_t *, unsigned char **, const unsigned char *);
 
 static struct range modRange(const uint32_t[CDF_SIZE], unsigned char);
@@ -78,13 +78,13 @@ STORAGE_SPEC void aransInit(struct Arans *arans) {
 
 STORAGE_SPEC size_t
 aransEncode(struct Arans *arans, unsigned char *out, size_t out_size, const unsigned char *in, size_t in_size) {
-    unsigned char *out_cur = out;
+    size_t offset = putOriginalSize(out, in_size);
+    unsigned char *out_cur = &out[offset];
     const unsigned char *in_cur = in;
-    size_t out_rem = out_size;
+    size_t out_rem = out_size - offset;
     size_t in_rem = in_size;
     size_t ret;
-    uint32_t
-    ALIGN_ALPH_SIZE(cdf_align[CDF_SIZE + 7]);
+    uint32_t ALIGN_ALPH_SIZE(cdf_align[CDF_SIZE + 7]);
     uint32_t *cdf = &cdf_align[7];
     memcpy(cdf, arans->cdf, sizeof(arans->cdf));
 
@@ -149,6 +149,15 @@ static int encPut(uint32_t *c, unsigned char **pptr, struct range rng, const uns
     return 0;
 }
 
+static size_t putOriginalSize(unsigned char *out, size_t in_size) {
+    *out++ = in_size >> 24;
+    *out++ = in_size >> 16;
+    *out++ = in_size >> 8;
+    *out++ = in_size;
+
+    return 4;
+}
+
 static int encFlush(const uint32_t *c, unsigned char **pptr, const unsigned char *lim) {
     if (*pptr < &lim[4])
         return 1;
@@ -161,7 +170,7 @@ static int encFlush(const uint32_t *c, unsigned char **pptr, const unsigned char
 }
 
 static struct range modRange(const uint32_t cdf[CDF_SIZE], unsigned char c) {
-    return (struct range) {cdf[c], (uint32_t)(cdf[c + 1] - cdf[c])};
+    return (struct range) {cdf[c], (uint32_t) (cdf[c + 1] - cdf[c])};
 }
 
 static void modUpdate(uint32_t cdf[CDF_SIZE], unsigned char c) {
@@ -177,6 +186,8 @@ static void modUpdate(uint32_t cdf[CDF_SIZE], unsigned char c) {
 // public function declarations
 STORAGE_SPEC size_t aransDecode(struct Arans *, unsigned char *, size_t, const unsigned char *, size_t);
 
+STORAGE_SPEC size_t aransGetOutFileSize(unsigned char *);
+
 // internal function declarations
 static size_t decChunk(uint32_t[CDF_SIZE], unsigned char *, size_t, const unsigned char *, size_t);
 
@@ -190,12 +201,15 @@ static unsigned char modSymb(const uint32_t[CDF_SIZE], uint32_t);
 
 // public functions
 STORAGE_SPEC size_t
-aransDecode(struct Arans *arans, unsigned char *out, const size_t out_size, const unsigned char *in, const size_t in_size) {
+aransDecode(struct Arans *arans, unsigned char *out, const size_t out_size, const unsigned char *in,
+            const size_t in_size) {
+    size_t offset = 4;
     unsigned char *out_cur = out;
-    const unsigned char *in_cur = in;
-    size_t out_rem = out_size, in_rem = in_size, ret;
-    uint32_t
-    ALIGN_ALPH_SIZE(cdf_align[CDF_SIZE + 7]);
+    const unsigned char *in_cur = &in[offset];
+    size_t out_rem = out_size;
+    size_t in_rem = in_size - offset;
+    size_t ret;
+    uint32_t ALIGN_ALPH_SIZE(cdf_align[CDF_SIZE + 7]);
     uint32_t *cdf = &cdf_align[7];
     memcpy(cdf, arans->cdf, sizeof(arans->cdf));
 
@@ -214,12 +228,23 @@ aransDecode(struct Arans *arans, unsigned char *out, const size_t out_size, cons
 
     in_rem -= ret;
     memcpy(arans->cdf, cdf, sizeof(arans->cdf));
-    return in_size - in_rem;
+    return in_size - in_rem - offset;
+}
+
+STORAGE_SPEC size_t aransGetOutFileSize(unsigned char *in) {
+    size_t size = 0;
+    size = *in++ << 24;
+    size |= *in++ << 16;
+    size |= *in++ << 8;
+    size |= *in;
+
+    return size;
 }
 
 // internal functions
 static size_t
-decChunk(uint32_t cdf[CDF_SIZE], unsigned char *out, const size_t out_size, const unsigned char *in, const size_t in_size) {
+decChunk(uint32_t cdf[CDF_SIZE], unsigned char *out, const size_t out_size, const unsigned char *in,
+         const size_t in_size) {
     unsigned char *ptr = (unsigned char *) in;
     uint32_t cod;
 
