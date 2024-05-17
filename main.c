@@ -1,11 +1,17 @@
 //includes
-#define ARANS_STATIC
-
 #include <stdio.h>
 #include <string.h>
 
 #include "platform.h"
-#include "arans.h"
+
+#define ARANS_STATIC
+//#define NO_SIMD
+
+#ifndef NO_SIMD
+    #include "arans_SIMD.h"
+#else
+    #include "arans.h"
+#endif
 
 //main function
 int main(int argc, char *argv[]) {

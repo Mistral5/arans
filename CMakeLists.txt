@@ -3,7 +3,10 @@ project(arans C)
 
 set(CMAKE_C_STANDARD 11)
 
+add_compile_options(-mavx -march=native)
+
 add_executable(arans
-        arans.h
         main.c
+        arans.h
+        arans_SIMD.h
 )

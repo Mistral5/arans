@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdalign.h>
+#include <immintrin.h>
 
 //constants
 #ifndef RATE_BITS
@@ -37,12 +38,12 @@
 
 //structs
 struct Arans {
-    uint32_t cdf[CDF_SIZE];
+    uint16_t cdf[CDF_SIZE];
 };
 
 struct range {
-    uint32_t start;
-    uint32_t width;
+    uint16_t start;
+    uint16_t width;
 };
 
 static uint16_t ALIGN_ALPH_SIZE(updateMtx[ALPH_SIZE][ALPH_SIZE]);
@@ -56,7 +57,7 @@ STORAGE_SPEC void aransInit(struct Arans *);
 STORAGE_SPEC size_t aransEncode(struct Arans *, unsigned char *, size_t, const unsigned char *, size_t);
 
 //internal function declarations
-static size_t encChunk(uint32_t *, unsigned char *, size_t, const unsigned char *, size_t);
+static size_t encChunk(uint16_t *, unsigned char *, size_t, const unsigned char *, size_t);
 
 static int encPut(uint32_t *, unsigned char **, struct range);
 
@@ -64,9 +65,9 @@ static size_t putOriginalSize(unsigned char *, size_t);
 
 static int encFlush(const uint32_t *, unsigned char **, const unsigned char *);
 
-static struct range modRange(const uint32_t *, unsigned char);
+static struct range modRange(const uint16_t *, unsigned char);
 
-static void modUpdate(uint32_t *, unsigned char);
+static void modUpdate(uint16_t *, unsigned char);
 
 //public functions
 STORAGE_SPEC void aransInit(struct Arans *arans) {
@@ -86,8 +87,8 @@ aransEncode(struct Arans *arans, unsigned char *out, size_t out_size, const unsi
     size_t out_rem = out_size - offset;
     size_t in_rem = in_size;
     size_t ret;
-    uint32_t ALIGN_ALPH_SIZE(cdf_align[CDF_SIZE + ALIGN_SHIFT]);
-    uint32_t *cdf = &cdf_align[ALIGN_SHIFT];
+    uint16_t ALIGN_ALPH_SIZE(cdf_align[CDF_SIZE + ALIGN_SHIFT]);
+    uint16_t *cdf = &cdf_align[ALIGN_SHIFT];
     memcpy(cdf, arans->cdf, sizeof(arans->cdf));
 
     while (in_rem > CHUNK_SIZE) {
@@ -110,7 +111,7 @@ aransEncode(struct Arans *arans, unsigned char *out, size_t out_size, const unsi
 
 //internal functions
 static size_t
-encChunk(uint32_t *cdf, unsigned char *out, size_t out_size, const unsigned char *in, size_t in_size) {
+encChunk(uint16_t *cdf, unsigned char *out, size_t out_size, const unsigned char *in, size_t in_size) {
     struct range rng_buff[CHUNK_SIZE];
     unsigned char *ptr = &out[out_size];
     uint32_t cod = CODE_NORM;
@@ -171,13 +172,49 @@ static int encFlush(const uint32_t *c, unsigned char **pptr, const unsigned char
     return 0;
 }
 
-static struct range modRange(const uint32_t *cdf, unsigned char c) {
+static struct range modRange(const uint16_t *cdf, unsigned char c) {
     return (struct range) {cdf[c], cdf[c + 1] - cdf[c]};
 }
 
-static void modUpdate(uint32_t *cdf, unsigned char c) {
+static void modUpdate(uint16_t *cdf, unsigned char c) {
+#ifndef __AVX2__
     for (int i = 1; i < ALPH_SIZE; ++i)
         cdf[i] = ((cdf[i] << RATE_BITS) + updateMtx[c][i - 1] - cdf[i]) >> RATE_BITS;
+#else
+    __m256i cdf1 = _mm256_load_si256((__m256i*)&cdf[1]);
+    __m256i cdf17 = _mm256_load_si256((__m256i*)&cdf[17]);
+    __m256i cdf33 = _mm256_load_si256((__m256i*)&cdf[33]);
+    __m256i cdf49 = _mm256_load_si256((__m256i*)&cdf[49]);
+    __m256i cdf65 = _mm256_load_si256((__m256i*)&cdf[65]);
+    __m256i cdf81 = _mm256_load_si256((__m256i*)&cdf[81]);
+    __m256i cdf97 = _mm256_load_si256((__m256i*)&cdf[97]);
+    __m256i cdf113 = _mm256_load_si256((__m256i*)&cdf[113]);
+    __m256i cdf129 = _mm256_load_si256((__m256i*)&cdf[129]);
+    __m256i cdf145 = _mm256_load_si256((__m256i*)&cdf[145]);
+    __m256i cdf161 = _mm256_load_si256((__m256i*)&cdf[161]);
+    __m256i cdf177 = _mm256_load_si256((__m256i*)&cdf[177]);
+    __m256i cdf193 = _mm256_load_si256((__m256i*)&cdf[193]);
+    __m256i cdf209 = _mm256_load_si256((__m256i*)&cdf[209]);
+    __m256i cdf225 = _mm256_load_si256((__m256i*)&cdf[225]);
+    __m256i cdf241 = _mm256_load_si256((__m256i*)&cdf[241]);
+
+    *(__m256i*)&cdf[1] = _mm256_add_epi16(cdf1, _mm256_srai_epi16(_mm256_sub_epi16(*(__m256i*)&updateMtx[c][0], cdf1), RATE_BITS));
+    *(__m256i*)&cdf[17] = _mm256_add_epi16(cdf17, _mm256_srai_epi16(_mm256_sub_epi16(*(__m256i*)&updateMtx[c][16], cdf17), RATE_BITS));
+    *(__m256i*)&cdf[33] = _mm256_add_epi16(cdf33, _mm256_srai_epi16(_mm256_sub_epi16(*(__m256i*)&updateMtx[c][32], cdf33), RATE_BITS));
+    *(__m256i*)&cdf[49] = _mm256_add_epi16(cdf49, _mm256_srai_epi16(_mm256_sub_epi16(*(__m256i*)&updateMtx[c][48], cdf49), RATE_BITS));
+    *(__m256i*)&cdf[65] = _mm256_add_epi16(cdf65, _mm256_srai_epi16(_mm256_sub_epi16(*(__m256i*)&updateMtx[c][64], cdf65), RATE_BITS));
+    *(__m256i*)&cdf[81] = _mm256_add_epi16(cdf81, _mm256_srai_epi16(_mm256_sub_epi16(*(__m256i*)&updateMtx[c][80], cdf81), RATE_BITS));
+    *(__m256i*)&cdf[97] = _mm256_add_epi16(cdf97, _mm256_srai_epi16(_mm256_sub_epi16(*(__m256i*)&updateMtx[c][96], cdf97), RATE_BITS));
+    *(__m256i*)&cdf[113] = _mm256_add_epi16(cdf113, _mm256_srai_epi16(_mm256_sub_epi16(*(__m256i*)&updateMtx[c][112], cdf113), RATE_BITS));
+    *(__m256i*)&cdf[129] = _mm256_add_epi16(cdf129, _mm256_srai_epi16(_mm256_sub_epi16(*(__m256i*)&updateMtx[c][128], cdf129), RATE_BITS));
+    *(__m256i*)&cdf[145] = _mm256_add_epi16(cdf145, _mm256_srai_epi16(_mm256_sub_epi16(*(__m256i*)&updateMtx[c][144], cdf145), RATE_BITS));
+    *(__m256i*)&cdf[161] = _mm256_add_epi16(cdf161, _mm256_srai_epi16(_mm256_sub_epi16(*(__m256i*)&updateMtx[c][160], cdf161), RATE_BITS));
+    *(__m256i*)&cdf[177] = _mm256_add_epi16(cdf177, _mm256_srai_epi16(_mm256_sub_epi16(*(__m256i*)&updateMtx[c][176], cdf177), RATE_BITS));
+    *(__m256i*)&cdf[193] = _mm256_add_epi16(cdf193, _mm256_srai_epi16(_mm256_sub_epi16(*(__m256i*)&updateMtx[c][192], cdf193), RATE_BITS));
+    *(__m256i*)&cdf[209] = _mm256_add_epi16(cdf209, _mm256_srai_epi16(_mm256_sub_epi16(*(__m256i*)&updateMtx[c][208], cdf209), RATE_BITS));
+    *(__m256i*)&cdf[225] = _mm256_add_epi16(cdf225, _mm256_srai_epi16(_mm256_sub_epi16(*(__m256i*)&updateMtx[c][224], cdf225), RATE_BITS));
+    *(__m256i*)&cdf[241] = _mm256_add_epi16(cdf241, _mm256_srai_epi16(_mm256_sub_epi16(*(__m256i*)&updateMtx[c][240], cdf241), RATE_BITS));
+#endif
 }
 
 // Encoder
@@ -191,15 +228,15 @@ STORAGE_SPEC size_t aransDecode(struct Arans *, unsigned char *, size_t, const u
 STORAGE_SPEC size_t aransGetOutFileSize(unsigned char *);
 
 // internal function declarations
-static size_t decChunk(uint32_t *, unsigned char *, size_t, const unsigned char *, size_t);
+static size_t decChunk(uint16_t *, unsigned char *, size_t, const unsigned char *, size_t);
 
 static int decInit(uint32_t *, unsigned char **, const unsigned char *);
 
 static int decPut(uint32_t *, unsigned char **, struct range);
 
-static uint32_t decGet(const uint32_t *);
+static uint16_t decGet(const uint32_t *);
 
-static unsigned char modSymb(const uint32_t *, uint32_t);
+static unsigned char modSymb(const uint16_t *, uint16_t);
 
 // public functions
 STORAGE_SPEC size_t
@@ -211,8 +248,8 @@ aransDecode(struct Arans *arans, unsigned char *out, const size_t out_size, cons
     size_t out_rem = out_size;
     size_t in_rem = in_size - offset;
     size_t ret;
-    uint32_t ALIGN_ALPH_SIZE(cdf_align[CDF_SIZE + ALIGN_SHIFT]);
-    uint32_t *cdf = &cdf_align[ALIGN_SHIFT];
+    uint16_t ALIGN_ALPH_SIZE(cdf_align[CDF_SIZE + ALIGN_SHIFT]);
+    uint16_t *cdf = &cdf_align[ALIGN_SHIFT];
     memcpy(cdf, arans->cdf, sizeof(arans->cdf));
 
     while (out_rem > CHUNK_SIZE) {
@@ -245,7 +282,7 @@ STORAGE_SPEC size_t aransGetOutFileSize(unsigned char *in) {
 
 // internal functions
 static size_t
-decChunk(uint32_t *cdf, unsigned char *out, const size_t out_size, const unsigned char *in, const size_t in_size) {
+decChunk(uint16_t *cdf, unsigned char *out, const size_t out_size, const unsigned char *in, const size_t in_size) {
     unsigned char *ptr = (unsigned char *) in;
     uint32_t cod;
 
@@ -297,11 +334,11 @@ static int decPut(uint32_t *c, unsigned char **pptr, const struct range rng) {
     return 0;
 }
 
-static uint32_t decGet(const uint32_t *c) {
+static uint16_t decGet(const uint32_t *c) {
     return *c & (PROB_SIZE - 1);
 }
 
-static unsigned char modSymb(const uint32_t *cdf, const uint32_t prb) {
+static unsigned char modSymb(const uint16_t *cdf, const uint16_t prb) {
     for (int i = 1; i < CDF_SIZE; ++i) {
         if (prb < cdf[i])
             return i - 1;
