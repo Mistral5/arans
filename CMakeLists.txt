@@ -9,4 +9,7 @@ add_executable(arans
         main.c
         arans.h
         arans_SIMD.h
+        arans_16x16.h
+        arans_8x32.h
+        arans_4x64.h
 )

@@ -1,17 +1,16 @@
+#define ARANS_STATIC
+
 //includes
 #include <stdio.h>
 #include <string.h>
 
 #include "platform.h"
 
-#define ARANS_STATIC
-//#define NO_SIMD
-
-#ifndef NO_SIMD
-    #include "arans_SIMD.h"
-#else
-    #include "arans.h"
-#endif
+//#include "arans.h"
+#include "arans_SIMD.h"
+//#include "arans_16x16.h"
+//#include "arans_8x32.h"
+//#include "arans_4x64.h"
 
 //main function
 int main(int argc, char *argv[]) {
