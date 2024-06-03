@@ -1,4 +1,4 @@
-#ifndef ARANS_ARANS_H
+#ifndef ARANS_ARANS_8_H
 #define ARANS_ARANS_H
 
 //process configuration
@@ -23,12 +23,9 @@
 #define CODE_NORM (1 << CODE_BITS)  //lower bound for normalization
 #define PROB_SIZE (1 << PROB_BITS)  //total for probability factors
 #define CHUNK_SIZE (1 << 13)        //number of bytes per chunk
-#define ALIGN_SHIFT 7              //structure aligning
-
-#define ALPH1_SIZE (1 << 2)         //number of characters in the alphabet 1
-#define ALPH2_SIZE (1 << 6)         //number of characters in the alphabet 2
-#define CDF1_SIZE (ALPH1_SIZE + 1)  //number of elements in cdf 1
-#define CDF2_SIZE (ALPH2_SIZE + 1)  //number of elements in cdf 2
+#define ALPH_SIZE (1 << 4)          //number of characters in the alphabet
+#define CDF_SIZE (ALPH_SIZE + 1)    //number of elements in cdf
+#define ALIGN_SHIFT 7               //structure aligning
 
 //implementation section
 #ifdef __cplusplus
@@ -40,8 +37,8 @@
 
 //structs
 struct Arans {
-    uint16_t cdf1[CDF1_SIZE];
-    uint16_t cdf2[ALPH1_SIZE][CDF2_SIZE];
+    uint16_t cdf1[CDF_SIZE];
+    uint16_t cdf2[ALPH_SIZE][CDF_SIZE];
 };
 
 struct Range {
@@ -49,7 +46,7 @@ struct Range {
     uint16_t width;
 };
 
-static uint16_t ALIGN16(updateMtx[ALPH2_SIZE][ALPH2_SIZE]);
+static uint16_t ALIGN16(updateMtx[ALPH_SIZE][ALPH_SIZE]);
 
 
 // Encoder
@@ -60,7 +57,7 @@ STORAGE_SPEC void aransInit(struct Arans *);
 STORAGE_SPEC size_t aransEncode(struct Arans *, unsigned char *, size_t, const unsigned char *, size_t);
 
 //internal function declarations
-static size_t encChunk(uint16_t *, uint16_t (*)[CDF2_SIZE], unsigned char *, size_t, const unsigned char *, size_t);
+static size_t encChunk(uint16_t *, uint16_t (*)[CDF_SIZE], unsigned char *, size_t, const unsigned char *, size_t);
 
 static int encPut(uint32_t *, unsigned char **, struct Range);
 
@@ -70,23 +67,23 @@ static int encFlush(const uint32_t *, unsigned char **, const unsigned char *);
 
 static inline struct Range modRange(const uint16_t *, unsigned char);
 
-static inline struct Range modSecondRange(const uint16_t (*)[CDF2_SIZE], unsigned char, unsigned char);
+static inline struct Range modSecondRange(const uint16_t (*)[CDF_SIZE], unsigned char, unsigned char);
 
 static inline void modUpdate(uint16_t *, unsigned char);
 
-static inline void modSecondUpdate(uint16_t (*)[CDF2_SIZE], unsigned char, unsigned char);
+static inline void modSecondUpdate(uint16_t (*)[CDF_SIZE], unsigned char, unsigned char);
 
 //public functions
 STORAGE_SPEC void aransInit(struct Arans *arans) {
-    for (int i = 0; i < CDF1_SIZE; ++i)
+    for (int i = 0; i < CDF_SIZE; ++i)
         arans->cdf1[i] = i << (PROB_BITS - 8);
 
-    for (int i = 0; i < ALPH1_SIZE; ++i)
-        for (int j = 0; j < CDF2_SIZE; ++j)
+    for (int i = 0; i < ALPH_SIZE; ++i)
+        for (int j = 0; j < CDF_SIZE; ++j)
             arans->cdf2[i][j] = j << (PROB_BITS - 8);
 
-    for (int i = 0; i < ALPH2_SIZE; ++i)
-        for (int j = 0; j < ALPH2_SIZE; ++j)
+    for (int i = 0; i < ALPH_SIZE; ++i)
+        for (int j = 0; j < ALPH_SIZE; ++j)
             updateMtx[i][j] = ((j + 1) + ((i < (j + 1)) ? PROB_SIZE - 1 : 0));
 }
 
@@ -99,11 +96,11 @@ aransEncode(struct Arans *arans, unsigned char *out, size_t out_size, const unsi
     size_t in_rem = in_size;
     size_t ret;
 
-    uint16_t ALIGN16(cdf_align1[CDF1_SIZE + ALIGN_SHIFT]);
-    uint16_t ALIGN16(cdf_align2[ALPH1_SIZE + ALIGN_SHIFT][CDF2_SIZE]);
+    uint16_t ALIGN16(cdf_align1[CDF_SIZE + ALIGN_SHIFT]);
+    uint16_t ALIGN16(cdf_align2[ALPH_SIZE + ALIGN_SHIFT][CDF_SIZE]);
 
     uint16_t *cdf1 = &cdf_align1[ALIGN_SHIFT];
-    uint16_t (*cdf2)[CDF2_SIZE] = &cdf_align2[ALIGN_SHIFT];
+    uint16_t (*cdf2)[CDF_SIZE] = &cdf_align2[ALIGN_SHIFT];
 
     memcpy(cdf1, arans->cdf1, sizeof(arans->cdf1));
     memcpy(cdf2, arans->cdf2, sizeof(arans->cdf2));
@@ -129,7 +126,7 @@ aransEncode(struct Arans *arans, unsigned char *out, size_t out_size, const unsi
 
 //internal functions
 static size_t
-encChunk(uint16_t *cdf1, uint16_t (*cdf2)[CDF2_SIZE], unsigned char *out, size_t out_size, const unsigned char *in,
+encChunk(uint16_t *cdf1, uint16_t (*cdf2)[CDF_SIZE], unsigned char *out, size_t out_size, const unsigned char *in,
          size_t in_size) {
     unsigned char *ptr = &out[out_size];
     struct Range range1[CHUNK_SIZE];
@@ -138,8 +135,8 @@ encChunk(uint16_t *cdf1, uint16_t (*cdf2)[CDF2_SIZE], unsigned char *out, size_t
     uint32_t cod2 = CODE_NORM;
 
     for (size_t i = 0; i < in_size; ++i) {
-        unsigned char n1 = in[i] >> 6;
-        unsigned char n2 = in[i] & 0x3F;
+        unsigned char n1 = in[i] >> 4;
+        unsigned char n2 = in[i] & 0x0F;
 
         range1[i] = modRange(cdf1, n1);
         range2[i] = modSecondRange(cdf2, n1, n2);
@@ -209,17 +206,17 @@ static inline struct Range modRange(const uint16_t *cdf, unsigned char c) {
     return (struct Range) {cdf[c], cdf[c + 1] - cdf[c]};
 }
 
-static inline struct Range modSecondRange(const uint16_t (*cdf)[CDF2_SIZE], unsigned char n1, unsigned char n2) {
+static inline struct Range modSecondRange(const uint16_t (*cdf)[CDF_SIZE], unsigned char n1, unsigned char n2) {
     return (struct Range) {cdf[n1][n2], cdf[n1][n2 + 1] - cdf[n1][n2]};
 }
 
 static inline void modUpdate(uint16_t *cdf, unsigned char c) {
-    for (int i = 1; i < CDF1_SIZE; ++i)
+    for (int i = 1; i < CDF_SIZE; ++i)
         cdf[i] = ((cdf[i] << RATE_BITS) + updateMtx[c][i - 1] - cdf[i]) >> RATE_BITS;
 }
 
-static inline void modSecondUpdate(uint16_t (*cdf)[CDF2_SIZE], unsigned char n1, unsigned char n2) {
-    for (int i = 1; i < CDF2_SIZE; ++i)
+static inline void modSecondUpdate(uint16_t (*cdf)[CDF_SIZE], unsigned char n1, unsigned char n2) {
+    for (int i = 1; i < CDF_SIZE; ++i)
         cdf[n1][i] = ((cdf[n1][i] << RATE_BITS) + updateMtx[n2][i - 1] - cdf[n1][i]) >> RATE_BITS;
 }
 
@@ -234,7 +231,7 @@ STORAGE_SPEC size_t aransDecode(struct Arans *, unsigned char *, size_t, const u
 STORAGE_SPEC size_t aransGetOutFileSize(unsigned char *);
 
 // internal function declarations
-static size_t decChunk(uint16_t *, uint16_t (*)[CDF2_SIZE], unsigned char *, size_t, const unsigned char *, size_t);
+static size_t decChunk(uint16_t *, uint16_t (*)[CDF_SIZE], unsigned char *, size_t, const unsigned char *, size_t);
 
 static int decInit(uint32_t *, unsigned char **, const unsigned char *);
 
@@ -244,7 +241,7 @@ static inline uint16_t decGet(const uint32_t *);
 
 static unsigned char modSymb(const uint16_t *, uint16_t);
 
-static unsigned char modSecondSymb(const uint16_t (*)[CDF2_SIZE], unsigned char, uint16_t);
+static unsigned char modSecondSymb(const uint16_t (*)[CDF_SIZE], unsigned char, uint16_t);
 
 // public functions
 STORAGE_SPEC size_t aransDecode(struct Arans *arans, unsigned char *out, const size_t out_size, const unsigned char *in,
@@ -256,11 +253,11 @@ STORAGE_SPEC size_t aransDecode(struct Arans *arans, unsigned char *out, const s
     size_t in_rem = in_size - offset;
     size_t ret;
 
-    uint16_t ALIGN16(cdf_align1[CDF1_SIZE + ALIGN_SHIFT]);
-    uint16_t ALIGN16(cdf_align2[ALPH1_SIZE + ALIGN_SHIFT][CDF2_SIZE]);
+    uint16_t ALIGN16(cdf_align1[CDF_SIZE + ALIGN_SHIFT]);
+    uint16_t ALIGN16(cdf_align2[ALPH_SIZE + ALIGN_SHIFT][CDF_SIZE]);
 
     uint16_t *cdf1 = &cdf_align1[ALIGN_SHIFT];
-    uint16_t (*cdf2)[CDF2_SIZE] = &cdf_align2[ALIGN_SHIFT];
+    uint16_t (*cdf2)[CDF_SIZE] = &cdf_align2[ALIGN_SHIFT];
 
     memcpy(cdf1, arans->cdf1, sizeof(arans->cdf1));
     memcpy(cdf2, arans->cdf2, sizeof(arans->cdf2));
@@ -294,9 +291,9 @@ STORAGE_SPEC size_t aransGetOutFileSize(unsigned char *in) {
 }
 
 // internal functions
-static size_t decChunk(uint16_t *cdf1, uint16_t (*cdf2)[CDF2_SIZE], unsigned char *out, const size_t out_size,
-                       const unsigned char *in,
-                       const size_t in_size) {
+static size_t
+decChunk(uint16_t *cdf1, uint16_t (*cdf2)[CDF_SIZE], unsigned char *out, const size_t out_size, const unsigned char *in,
+         const size_t in_size) {
     unsigned char *ptr = (unsigned char *) in;
     uint32_t cod1;
     uint32_t cod2;
@@ -323,7 +320,7 @@ static size_t decChunk(uint16_t *cdf1, uint16_t (*cdf2)[CDF2_SIZE], unsigned cha
         if (decPut(&cod2, &ptr, range2))
             return 0;
 
-        out[i] = (n1 << 6) | n2;
+        out[i] = (n1 << 4) | n2;
     }
 
     if ((cod1 != CODE_NORM) || (cod2 != CODE_NORM))
@@ -365,17 +362,17 @@ static inline uint16_t decGet(const uint32_t *c) {
 }
 
 static unsigned char modSymb(const uint16_t *cdf, const uint16_t prb) {
-    for (int i = 1; i < CDF1_SIZE; ++i)
+    for (int i = 1; i < CDF_SIZE; ++i)
         if (prb < cdf[i])
             return i - 1;
 }
 
-static unsigned char modSecondSymb(const uint16_t (*cdf)[CDF2_SIZE], unsigned char n1, const uint16_t prb) {
-    for (int i = 1; i < CDF2_SIZE; ++i)
+static unsigned char modSecondSymb(const uint16_t (*cdf)[CDF_SIZE], unsigned char n1, const uint16_t prb) {
+    for (int i = 1; i < CDF_SIZE; ++i)
         if (prb < cdf[n1][i])
             return i - 1;
 }
 
 // Decoder
 
-#endif //ARANS_ARANS_H
+#endif //ARANS_ARANS_8_H

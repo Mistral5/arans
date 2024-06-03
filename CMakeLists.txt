@@ -7,9 +7,13 @@ add_compile_options(-mavx -march=native)
 
 add_executable(arans
         main.c
-        arans.h
+        arans_8.h
+        arans_2x6.h
+        arans_3x5.h
+        arans_4x4.h
+        arans_2x2x4.h
+        arans_2x3x3.h
+        arans_2x2x2x2.h
+        arans_3x5_clear.h
         arans_SIMD.h
-        arans_16x16.h
-        arans_8x32.h
-        arans_4x64.h
 )

@@ -6,11 +6,15 @@
 
 #include "platform.h"
 
-//#include "arans.h"
-#include "arans_SIMD.h"
-//#include "arans_16x16.h"
-//#include "arans_8x32.h"
-//#include "arans_4x64.h"
+#include "arans_8.h"
+//#include "arans_4x4.h"
+//#include "arans_3x5.h"
+//#include "arans_2x6.h"
+//#include "arans_2x3x3.h"
+//#include "arans_2x2x4.h"
+//#include "arans_2x2x2x2.h"
+//#include "arans_3x5_clear.h"
+//#include "arans_SIMD.h"
 
 //main function
 int main(int argc, char *argv[]) {
@@ -54,7 +58,7 @@ int main(int argc, char *argv[]) {
     unsigned char *in = (unsigned char *) malloc(in_size);
     unsigned char *out = NULL;
 
-    if(!in) {
+    if (!in) {
         fclose(in_file);
         fclose(out_file);
         printf("Allocate failed!\n");
@@ -77,7 +81,7 @@ int main(int argc, char *argv[]) {
 
         start_execution_time = timer();
         start_clocks = __rdtsc();
-        
+
         //do encoding
         out_size = aransEncode(&arans, out, out_size, in, in_size);
 
@@ -85,7 +89,7 @@ int main(int argc, char *argv[]) {
         execution_time = timer() - start_execution_time;
     }
 
-    if(mode == 2) {
+    if (mode == 2) {
         out_size = aransGetOutFileSize(in);
         out = (unsigned char *) malloc(out_size);
 
@@ -111,6 +115,16 @@ int main(int argc, char *argv[]) {
     printf("%" PRIu64" clocks, %.1f clocks/symbol (%5.1fMiB/s)\n", clocks,
            (double) clocks / (double) in_size,
            (double) in_size / (execution_time * 1048576.0));
+
+    if (mode == 1) {
+        FILE *fstat = fopen("stat.txt", "a");
+        fprintf(fstat, "%zu\t%zu\n", in_size, out_size);
+        fclose(fstat);
+    }
+
+    FILE *f_speed_stat = fopen("speed_stat.txt", "a");
+    fprintf(f_speed_stat, "%.1f\n", (double) clocks / (double) in_size);
+    fclose(f_speed_stat);
 
     //free buffers
     free(in);

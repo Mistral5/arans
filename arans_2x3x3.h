@@ -1,4 +1,4 @@
-#ifndef ARANS_ARANS_H
+#ifndef ARANS_ARANS_8_H
 #define ARANS_ARANS_H
 
 //process configuration
@@ -23,12 +23,14 @@
 #define CODE_NORM (1 << CODE_BITS)  //lower bound for normalization
 #define PROB_SIZE (1 << PROB_BITS)  //total for probability factors
 #define CHUNK_SIZE (1 << 13)        //number of bytes per chunk
-#define ALIGN_SHIFT 7              //structure aligning
+#define ALIGN_SHIFT 7               //structure aligning
 
-#define ALPH1_SIZE (1 << 3)         //number of characters in the alphabet 1
-#define ALPH2_SIZE (1 << 5)         //number of characters in the alphabet 2
+#define ALPH1_SIZE (1 << 2)         //number of characters in the alphabet 1
+#define ALPH2_SIZE (1 << 3)         //number of characters in the alphabet 2
+#define ALPH3_SIZE (1 << 3)         //number of characters in the alphabet 3
 #define CDF1_SIZE (ALPH1_SIZE + 1)  //number of elements in cdf 1
 #define CDF2_SIZE (ALPH2_SIZE + 1)  //number of elements in cdf 2
+#define CDF3_SIZE (ALPH3_SIZE + 1)  //number of elements in cdf 3
 
 //implementation section
 #ifdef __cplusplus
@@ -42,6 +44,7 @@
 struct Arans {
     uint16_t cdf1[CDF1_SIZE];
     uint16_t cdf2[ALPH1_SIZE][CDF2_SIZE];
+    uint16_t cdf3[ALPH1_SIZE][ALPH2_SIZE][CDF3_SIZE];
 };
 
 struct Range {
@@ -49,7 +52,7 @@ struct Range {
     uint16_t width;
 };
 
-static uint16_t ALIGN16(updateMtx[ALPH2_SIZE][ALPH2_SIZE]);
+static uint16_t ALIGN16(updateMtx[ALPH3_SIZE][ALPH3_SIZE]);
 
 
 // Encoder
@@ -60,7 +63,7 @@ STORAGE_SPEC void aransInit(struct Arans *);
 STORAGE_SPEC size_t aransEncode(struct Arans *, unsigned char *, size_t, const unsigned char *, size_t);
 
 //internal function declarations
-static size_t encChunk(uint16_t *, uint16_t (*)[CDF2_SIZE], unsigned char *, size_t, const unsigned char *, size_t);
+static size_t encChunk(uint16_t *, uint16_t (*)[CDF2_SIZE], uint16_t (*)[ALPH2_SIZE][CDF3_SIZE], unsigned char *, size_t, const unsigned char *, size_t);
 
 static int encPut(uint32_t *, unsigned char **, struct Range);
 
@@ -72,9 +75,13 @@ static inline struct Range modRange(const uint16_t *, unsigned char);
 
 static inline struct Range modSecondRange(const uint16_t (*)[CDF2_SIZE], unsigned char, unsigned char);
 
+static inline struct Range modThirdRange(const uint16_t (*)[ALPH2_SIZE][CDF3_SIZE], unsigned char, unsigned char, unsigned char);
+
 static inline void modUpdate(uint16_t *, unsigned char);
 
 static inline void modSecondUpdate(uint16_t (*)[CDF2_SIZE], unsigned char, unsigned char);
+
+static inline void modThirdUpdate(uint16_t (*)[ALPH2_SIZE][CDF3_SIZE], unsigned char, unsigned char, unsigned char);
 
 //public functions
 STORAGE_SPEC void aransInit(struct Arans *arans) {
@@ -85,8 +92,13 @@ STORAGE_SPEC void aransInit(struct Arans *arans) {
         for (int j = 0; j < CDF2_SIZE; ++j)
             arans->cdf2[i][j] = j << (PROB_BITS - 8);
 
-    for (int i = 0; i < ALPH2_SIZE; ++i)
+    for (int i = 0; i < ALPH1_SIZE; ++i)
         for (int j = 0; j < ALPH2_SIZE; ++j)
+            for (int k = 0; k < CDF3_SIZE; ++k)
+                arans->cdf3[i][j][k] = k << (PROB_BITS - 8);
+
+    for (int i = 0; i < ALPH3_SIZE; ++i)
+        for (int j = 0; j < ALPH3_SIZE; ++j)
             updateMtx[i][j] = ((j + 1) + ((i < (j + 1)) ? PROB_SIZE - 1 : 0));
 }
 
@@ -101,15 +113,18 @@ aransEncode(struct Arans *arans, unsigned char *out, size_t out_size, const unsi
 
     uint16_t ALIGN16(cdf_align1[CDF1_SIZE + ALIGN_SHIFT]);
     uint16_t ALIGN16(cdf_align2[ALPH1_SIZE + ALIGN_SHIFT][CDF2_SIZE]);
+    uint16_t ALIGN16(cdf_align3[ALPH1_SIZE + ALIGN_SHIFT][ALPH2_SIZE][CDF3_SIZE]);
 
     uint16_t *cdf1 = &cdf_align1[ALIGN_SHIFT];
     uint16_t (*cdf2)[CDF2_SIZE] = &cdf_align2[ALIGN_SHIFT];
+    uint16_t (*cdf3)[ALPH2_SIZE][CDF3_SIZE] = &cdf_align3[ALIGN_SHIFT];
 
     memcpy(cdf1, arans->cdf1, sizeof(arans->cdf1));
     memcpy(cdf2, arans->cdf2, sizeof(arans->cdf2));
+    memcpy(cdf3, arans->cdf3, sizeof(arans->cdf3));
 
     while (in_rem > CHUNK_SIZE) {
-        if (!(ret = encChunk(cdf1, cdf2, out_cur, out_rem, in_cur, CHUNK_SIZE)))
+        if (!(ret = encChunk(cdf1, cdf2, cdf3, out_cur, out_rem, in_cur, CHUNK_SIZE)))
             return 0;
 
         out_cur = &out_cur[ret];
@@ -118,43 +133,57 @@ aransEncode(struct Arans *arans, unsigned char *out, size_t out_size, const unsi
         in_rem -= CHUNK_SIZE;
     }
 
-    if (!(ret = encChunk(cdf1, cdf2, out_cur, out_rem, in_cur, in_rem)))
+    if (!(ret = encChunk(cdf1, cdf2, cdf3, out_cur, out_rem, in_cur, in_rem)))
         return 0;
 
     out_rem -= ret;
     memcpy(arans->cdf1, cdf1, sizeof(arans->cdf1));
     memcpy(arans->cdf2, cdf2, sizeof(arans->cdf2));
+    memcpy(arans->cdf3, cdf3, sizeof(arans->cdf3));
     return out_size - out_rem;
 }
 
 //internal functions
 static size_t
-encChunk(uint16_t *cdf1, uint16_t (*cdf2)[CDF2_SIZE], unsigned char *out, size_t out_size, const unsigned char *in,
+encChunk(uint16_t *cdf1, uint16_t (*cdf2)[CDF2_SIZE], uint16_t (*cdf3)[ALPH2_SIZE][CDF3_SIZE], unsigned char *out, size_t out_size, const unsigned char *in,
          size_t in_size) {
     unsigned char *ptr = &out[out_size];
+
     struct Range range1[CHUNK_SIZE];
     struct Range range2[CHUNK_SIZE];
+    struct Range range3[CHUNK_SIZE];
+
     uint32_t cod1 = CODE_NORM;
     uint32_t cod2 = CODE_NORM;
+    uint32_t cod3 = CODE_NORM;
 
     for (size_t i = 0; i < in_size; ++i) {
-        unsigned char n1 = in[i] >> 5;
-        unsigned char n2 = in[i] & 0x1F;
+        unsigned char n1 = in[i] >> 6;
+        unsigned char n2 = (in[i] & 0x38) >> 3;
+        unsigned char n3 = in[i] & 0x7;
 
         range1[i] = modRange(cdf1, n1);
         range2[i] = modSecondRange(cdf2, n1, n2);
+        range3[i] = modThirdRange(cdf3, n1, n2, n3);
 
         modUpdate(cdf1, n1);
         modSecondUpdate(cdf2, n1, n2);
+        modThirdUpdate(cdf3, n1, n2, n3);
     }
 
     for (size_t i = in_size; i > 0; --i) {
+        if (encPut(&cod3, &ptr, range3[i - 1]))
+            return 0;
+
         if (encPut(&cod2, &ptr, range2[i - 1]))
             return 0;
 
         if (encPut(&cod1, &ptr, range1[i - 1]))
             return 0;
     }
+
+    if (encFlush(&cod3, &ptr, out))
+        return 0;
 
     if (encFlush(&cod2, &ptr, out))
         return 0;
@@ -213,6 +242,10 @@ static inline struct Range modSecondRange(const uint16_t (*cdf)[CDF2_SIZE], unsi
     return (struct Range) {cdf[n1][n2], cdf[n1][n2 + 1] - cdf[n1][n2]};
 }
 
+static inline struct Range modThirdRange(const uint16_t (*cdf)[ALPH2_SIZE][CDF3_SIZE], unsigned char n1, unsigned char n2, unsigned char n3) {
+    return (struct Range) {cdf[n1][n2][n3], cdf[n1][n2][n3 + 1] - cdf[n1][n2][n3]};
+}
+
 static inline void modUpdate(uint16_t *cdf, unsigned char c) {
     for (int i = 1; i < CDF1_SIZE; ++i)
         cdf[i] = ((cdf[i] << RATE_BITS) + updateMtx[c][i - 1] - cdf[i]) >> RATE_BITS;
@@ -221,6 +254,11 @@ static inline void modUpdate(uint16_t *cdf, unsigned char c) {
 static inline void modSecondUpdate(uint16_t (*cdf)[CDF2_SIZE], unsigned char n1, unsigned char n2) {
     for (int i = 1; i < CDF2_SIZE; ++i)
         cdf[n1][i] = ((cdf[n1][i] << RATE_BITS) + updateMtx[n2][i - 1] - cdf[n1][i]) >> RATE_BITS;
+}
+
+static inline void modThirdUpdate(uint16_t (*cdf)[ALPH2_SIZE][CDF3_SIZE], unsigned char n1, unsigned char n2, unsigned char n3) {
+    for (int i = 1; i < CDF3_SIZE; ++i)
+        cdf[n1][n2][i] = ((cdf[n1][n2][i] << RATE_BITS) + updateMtx[n3][i - 1] - cdf[n1][n2][i]) >> RATE_BITS;
 }
 
 // Encoder
@@ -234,7 +272,7 @@ STORAGE_SPEC size_t aransDecode(struct Arans *, unsigned char *, size_t, const u
 STORAGE_SPEC size_t aransGetOutFileSize(unsigned char *);
 
 // internal function declarations
-static size_t decChunk(uint16_t *, uint16_t (*)[CDF2_SIZE], unsigned char *, size_t, const unsigned char *, size_t);
+static size_t decChunk(uint16_t *, uint16_t (*)[CDF2_SIZE], uint16_t (*)[ALPH2_SIZE][CDF3_SIZE], unsigned char *, size_t, const unsigned char *, size_t);
 
 static int decInit(uint32_t *, unsigned char **, const unsigned char *);
 
@@ -245,6 +283,8 @@ static inline uint16_t decGet(const uint32_t *);
 static unsigned char modSymb(const uint16_t *, uint16_t);
 
 static unsigned char modSecondSymb(const uint16_t (*)[CDF2_SIZE], unsigned char, uint16_t);
+
+static unsigned char modThirdSymb(const uint16_t (*cdf)[ALPH2_SIZE][CDF3_SIZE], unsigned char, unsigned char, uint16_t);
 
 // public functions
 STORAGE_SPEC size_t aransDecode(struct Arans *arans, unsigned char *out, const size_t out_size, const unsigned char *in,
@@ -258,15 +298,18 @@ STORAGE_SPEC size_t aransDecode(struct Arans *arans, unsigned char *out, const s
 
     uint16_t ALIGN16(cdf_align1[CDF1_SIZE + ALIGN_SHIFT]);
     uint16_t ALIGN16(cdf_align2[ALPH1_SIZE + ALIGN_SHIFT][CDF2_SIZE]);
+    uint16_t ALIGN16(cdf_align3[ALPH1_SIZE + ALIGN_SHIFT][ALPH2_SIZE][CDF3_SIZE]);
 
     uint16_t *cdf1 = &cdf_align1[ALIGN_SHIFT];
     uint16_t (*cdf2)[CDF2_SIZE] = &cdf_align2[ALIGN_SHIFT];
+    uint16_t (*cdf3)[ALPH2_SIZE][CDF3_SIZE] = &cdf_align3[ALIGN_SHIFT];
 
     memcpy(cdf1, arans->cdf1, sizeof(arans->cdf1));
     memcpy(cdf2, arans->cdf2, sizeof(arans->cdf2));
+    memcpy(cdf3, arans->cdf3, sizeof(arans->cdf3));
 
     while (out_rem > CHUNK_SIZE) {
-        if (!(ret = decChunk(cdf1, cdf2, out_cur, CHUNK_SIZE, in_cur, in_rem)))
+        if (!(ret = decChunk(cdf1, cdf2, cdf3, out_cur, CHUNK_SIZE, in_cur, in_rem)))
             return 0;
 
         in_cur = &in_cur[ret];
@@ -275,12 +318,13 @@ STORAGE_SPEC size_t aransDecode(struct Arans *arans, unsigned char *out, const s
         out_rem -= CHUNK_SIZE;
     }
 
-    if (!(ret = decChunk(cdf1, cdf2, out_cur, out_rem, in_cur, in_rem)))
+    if (!(ret = decChunk(cdf1, cdf2, cdf3, out_cur, out_rem, in_cur, in_rem)))
         return 0;
 
     in_rem -= ret;
     memcpy(arans->cdf1, cdf1, sizeof(arans->cdf1));
     memcpy(arans->cdf2, cdf2, sizeof(arans->cdf2));
+    memcpy(arans->cdf3, cdf3, sizeof(arans->cdf3));
     return in_size - in_rem - offset;
 }
 
@@ -294,12 +338,13 @@ STORAGE_SPEC size_t aransGetOutFileSize(unsigned char *in) {
 }
 
 // internal functions
-static size_t decChunk(uint16_t *cdf1, uint16_t (*cdf2)[CDF2_SIZE], unsigned char *out, const size_t out_size,
+static size_t decChunk(uint16_t *cdf1, uint16_t (*cdf2)[CDF2_SIZE], uint16_t (*cdf3)[ALPH2_SIZE][CDF3_SIZE], unsigned char *out, const size_t out_size,
                        const unsigned char *in,
                        const size_t in_size) {
     unsigned char *ptr = (unsigned char *) in;
     uint32_t cod1;
     uint32_t cod2;
+    uint32_t cod3;
 
     if (decInit(&cod1, &ptr, &in[in_size]))
         return 0;
@@ -307,15 +352,21 @@ static size_t decChunk(uint16_t *cdf1, uint16_t (*cdf2)[CDF2_SIZE], unsigned cha
     if (decInit(&cod2, &ptr, &in[in_size]))
         return 0;
 
+    if (decInit(&cod3, &ptr, &in[in_size]))
+        return 0;
+
     for (size_t i = 0; i < out_size; ++i) {
         unsigned char n1 = modSymb(cdf1, decGet(&cod1));
         unsigned char n2 = modSecondSymb(cdf2, n1, decGet(&cod2));
+        unsigned char n3 = modThirdSymb(cdf3, n1, n2, decGet(&cod3));
 
         struct Range range1 = modRange(cdf1, n1);
         struct Range range2 = modSecondRange(cdf2, n1, n2);
+        struct Range range3 = modThirdRange(cdf3, n1, n2, n3);
 
         modUpdate(cdf1, n1);
         modSecondUpdate(cdf2, n1, n2);
+        modThirdUpdate(cdf3, n1, n2, n3);
 
         if (decPut(&cod1, &ptr, range1))
             return 0;
@@ -323,10 +374,13 @@ static size_t decChunk(uint16_t *cdf1, uint16_t (*cdf2)[CDF2_SIZE], unsigned cha
         if (decPut(&cod2, &ptr, range2))
             return 0;
 
-        out[i] = (n1 << 5) | n2;
+        if (decPut(&cod3, &ptr, range3))
+            return 0;
+
+        out[i] = (n1 << 6) | (n2 << 3) | n3;
     }
 
-    if ((cod1 != CODE_NORM) || (cod2 != CODE_NORM))
+    if ((cod1 != CODE_NORM) || (cod2 != CODE_NORM) || (cod3 != CODE_NORM))
         return 0;
 
     return ptr - in;
@@ -376,6 +430,12 @@ static unsigned char modSecondSymb(const uint16_t (*cdf)[CDF2_SIZE], unsigned ch
             return i - 1;
 }
 
+static unsigned char modThirdSymb(const uint16_t (*cdf)[ALPH2_SIZE][CDF3_SIZE], unsigned char n1, unsigned char n2, const uint16_t prb) {
+    for (int i = 1; i < CDF3_SIZE; ++i)
+        if (prb < cdf[n1][n2][i])
+            return i - 1;
+}
+
 // Decoder
 
-#endif //ARANS_ARANS_H
+#endif //ARANS_ARANS_8_H

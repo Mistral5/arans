@@ -1,5 +1,5 @@
-#ifndef ARANS_ARANS_H
-#define ARANS_ARANS_H
+#ifndef ARANS_ARANS_8_H
+#define ARANS_ARANS_8_H
 
 //process configuration
 #ifdef ARANS_STATIC
@@ -25,7 +25,7 @@
 #define CHUNK_SIZE (1 << 13)        //number of bytes per chunk
 #define ALPH_SIZE (1 << 8)          //number of characters in the alphabet
 #define CDF_SIZE (ALPH_SIZE + 1)    //number of elements in cdf
-#define ALIGN_SHIFT 7              //structure aligning
+#define ALIGN_SHIFT 7               //structure aligning
 
 //implementation section
 #ifdef __cplusplus
@@ -159,7 +159,9 @@ static size_t putOriginalSize(unsigned char *out, size_t in_size) {
     return 4;
 }
 
-static int encFlush(const uint32_t *c, unsigned char **pptr, const unsigned char *lim) {
+static int encFlush(const uint32_t *c,
+                    unsigned char **pptr,
+                    const unsigned char *lim) {
     if (*pptr < &lim[4])
         return 1;
 
@@ -300,7 +302,9 @@ static inline uint32_t decGet(const uint32_t *c) {
     return *c & (PROB_SIZE - 1);
 }
 
-static unsigned char modSymb(const uint32_t *cdf, const uint32_t prb) {
+static unsigned char modSymb(
+        const uint32_t *cdf,
+        const uint32_t prb) {
     for (int i = 1; i < CDF_SIZE; ++i)
         if (prb < cdf[i])
             return i - 1;
@@ -308,4 +312,4 @@ static unsigned char modSymb(const uint32_t *cdf, const uint32_t prb) {
 
 // Decoder
 
-#endif //ARANS_ARANS_H
+#endif //ARANS_ARANS_8_H
