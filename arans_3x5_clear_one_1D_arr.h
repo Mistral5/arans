@@ -1,5 +1,5 @@
-#ifndef ARANS_ARANS_3x5_clear_H
-#define ARANS_ARANS_3x5_clear_H
+#ifndef ARANS_ARANS_3x5_clear_one_1D_arr_H
+#define ARANS_ARANS_3x5_clear_one_1D_arr_H
 
 //process configuration
 #ifdef ARANS_STATIC
@@ -38,8 +38,7 @@
 
 //structs
 struct Arans {
-    uint16_t ALIGN16(cdf1[CDF1_SIZE]);
-    uint16_t ALIGN16(cdf2[ALPH1_SIZE][CDF2_SIZE]);
+    uint16_t ALIGN16(cdf[CDF1_SIZE + ALPH1_SIZE * CDF2_SIZE]);
 };
 
 struct Range {
@@ -66,20 +65,18 @@ static int encFlush(const uint32_t *, unsigned char **, const unsigned char *);
 
 static inline struct Range modRange(const uint16_t *, unsigned char);
 
-static inline struct Range modSecondRange(const uint16_t (*)[CDF2_SIZE], unsigned char, unsigned char);
+static inline struct Range modSecondRange(const uint16_t *, unsigned char, unsigned char);
 
-static inline void modUpdate(uint16_t *, unsigned char);
-
-static inline void modSecondUpdate(uint16_t (*)[CDF2_SIZE], unsigned char, unsigned char);
+static inline void modUpdate(uint16_t *, unsigned char, unsigned char);
 
 //public functions
 STORAGE_SPEC void aransInit(struct Arans *arans) {
-    for (int i = 0; i < ALPH1_SIZE; ++i) {
-        arans->cdf1[i] = i << (PROB_BITS + 5 - 8);
+    for (int i = 0; i < CDF1_SIZE; ++i)
+        arans->cdf[i] = i << (PROB_BITS + 5 - 8);
+
+    for (int i = 0; i < ALPH1_SIZE; ++i)
         for (int j = 0; j < CDF2_SIZE; ++j)
-            arans->cdf2[i][j] = j << (PROB_BITS + 3 - 8);
-    }
-    arans->cdf1[ALPH1_SIZE] = ALPH1_SIZE << (PROB_BITS + 5 - 8);
+            arans->cdf[CDF1_SIZE + i * CDF2_SIZE + j] = j << (PROB_BITS + 3 - 8);
 
     for (int i = 0; i < ALPH2_SIZE; ++i)
         for (int j = 0; j < ALPH2_SIZE; ++j)
@@ -96,8 +93,7 @@ aransEncode(struct Arans *arans, unsigned char *out, size_t out_size, const unsi
     size_t offset = 4;
     unsigned char *ptr = &out[out_size - offset];
 
-    struct Range range1[in_size];
-    struct Range range2[in_size];
+    struct Range range[in_size * 2];
 
     uint32_t cod1 = CODE_NORM;
     uint32_t cod2 = CODE_NORM;
@@ -106,18 +102,17 @@ aransEncode(struct Arans *arans, unsigned char *out, size_t out_size, const unsi
         unsigned char n1 = in[i] >> 5;
         unsigned char n2 = in[i] & 0x1F;
 
-        range1[i] = modRange(arans->cdf1, n1);
-        range2[i] = modSecondRange(arans->cdf2, n1, n2);
+        range[i] = modRange(arans->cdf, n1);
+        range[i + in_size] = modSecondRange(arans->cdf, n1, n2);
 
-        modUpdate(arans->cdf1, n1);
-        modSecondUpdate(arans->cdf2, n1, n2);
+        modUpdate(arans->cdf, n1, n2);
     }
 
     for (size_t i = in_size; i > 0; --i) {
-        if (encPut(&cod2, &ptr, range2[i - 1]))
+        if (encPut(&cod2, &ptr, range[i + in_size - 1]))
             return 0;
 
-        if (encPut(&cod1, &ptr, range1[i - 1]))
+        if (encPut(&cod1, &ptr, range[i - 1]))
             return 0;
     }
 
@@ -162,22 +157,21 @@ static int encFlush(const uint32_t *c, unsigned char **pptr, const unsigned char
     return 0;
 }
 
-static inline struct Range modRange(const uint16_t *cdf, unsigned char c) {
-    return (struct Range) {cdf[c], cdf[c + 1] - cdf[c]};
+static inline struct Range modRange(const uint16_t *cdf, unsigned char n1) {
+    return (struct Range) {cdf[n1], cdf[n1 + 1] - cdf[n1]};
 }
 
-static inline struct Range modSecondRange(const uint16_t (*cdf)[CDF2_SIZE], unsigned char n1, unsigned char n2) {
-    return (struct Range) {cdf[n1][n2], cdf[n1][n2 + 1] - cdf[n1][n2]};
+static inline struct Range modSecondRange(const uint16_t *cdf, unsigned char n1, unsigned char n2) {
+    return (struct Range) {cdf[CDF1_SIZE + n1 * CDF2_SIZE + n2], cdf[CDF1_SIZE + n1 * CDF2_SIZE + n2 + 1] - cdf[CDF1_SIZE + n1 * CDF2_SIZE + n2]};
 }
 
-static inline void modUpdate(uint16_t *cdf, unsigned char c) {
+static inline void modUpdate(uint16_t *cdf, unsigned char n1, unsigned char n2) {
     for (int i = 1; i < ALPH1_SIZE; ++i)
-        cdf[i] = ((cdf[i] << RATE_BITS) + updateMtx[c][i - 1] - cdf[i]) >> RATE_BITS;
-}
+        cdf[i] = ((cdf[i] << RATE_BITS) + updateMtx[n1][i - 1] - cdf[i]) >> RATE_BITS;
 
-static inline void modSecondUpdate(uint16_t (*cdf)[CDF2_SIZE], unsigned char n1, unsigned char n2) {
-    for (int i = 1; i < ALPH2_SIZE; ++i)
-        cdf[n1][i] = ((cdf[n1][i] << RATE_BITS) + updateMtx[n2][i - 1] - cdf[n1][i]) >> RATE_BITS;
+    for (int i = 1; i < ALPH2_SIZE; ++i) {
+        cdf[CDF1_SIZE + n1 * CDF2_SIZE + i] = ((cdf[CDF1_SIZE + n1 * CDF2_SIZE + i] << RATE_BITS) + updateMtx[n2][i - 1] - cdf[CDF1_SIZE + n1 * CDF2_SIZE + i]) >> RATE_BITS;
+    }
 }
 
 // Encoder
@@ -199,7 +193,7 @@ static inline uint16_t decGet(const uint32_t *);
 
 static unsigned char modSymb(const uint16_t *, uint16_t);
 
-static unsigned char modSecondSymb(const uint16_t (*)[CDF2_SIZE], unsigned char, uint16_t);
+static unsigned char modSecondSymb(const uint16_t *, unsigned char, uint16_t);
 
 // public functions
 STORAGE_SPEC size_t aransDecode(struct Arans *arans, unsigned char *out, const size_t out_size, const unsigned char *in,
@@ -218,14 +212,13 @@ STORAGE_SPEC size_t aransDecode(struct Arans *arans, unsigned char *out, const s
         return 0;
 
     for (size_t i = 0; i < out_size; ++i) {
-        unsigned char n1 = modSymb(arans->cdf1, decGet(&cod1));
-        unsigned char n2 = modSecondSymb(arans->cdf2, n1, decGet(&cod2));
+        unsigned char n1 = modSymb(arans->cdf, decGet(&cod1));
+        unsigned char n2 = modSecondSymb(arans->cdf, n1, decGet(&cod2));
 
-        struct Range range1 = modRange(arans->cdf1, n1);
-        struct Range range2 = modSecondRange(arans->cdf2, n1, n2);
+        struct Range range1 = modRange(arans->cdf, n1);
+        struct Range range2 = modSecondRange(arans->cdf, n1, n2);
 
-        modUpdate(arans->cdf1, n1);
-        modSecondUpdate(arans->cdf2, n1, n2);
+        modUpdate(arans->cdf, n1, n2);
 
         if (decPut(&cod1, &ptr, range1))
             return 0;
@@ -289,12 +282,12 @@ static unsigned char modSymb(const uint16_t *cdf, const uint16_t prb) {
             return i - 1;
 }
 
-static unsigned char modSecondSymb(const uint16_t (*cdf)[CDF2_SIZE], unsigned char n1, const uint16_t prb) {
+static unsigned char modSecondSymb(const uint16_t *cdf, unsigned char n1, const uint16_t prb) {
     for (int i = 1; i < CDF2_SIZE; ++i)
-        if (prb < cdf[n1][i])
+        if (prb < cdf[CDF1_SIZE + n1 * CDF2_SIZE + i])
             return i - 1;
 }
 
 // Decoder
 
-#endif //ARANS_ARANS_3x5_clear_H
+#endif //ARANS_ARANS_3x5_clear_one_1D_arr_H

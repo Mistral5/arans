@@ -1,5 +1,5 @@
-#ifndef ARANS_ARANS_8_H
-#define ARANS_ARANS_H
+#ifndef ARANS_ARANS_2x2x4_H
+#define ARANS_ARANS_2x2x4_H
 
 //process configuration
 #ifdef ARANS_STATIC
@@ -438,4 +438,4 @@ static unsigned char modThirdSymb(const uint16_t (*cdf)[ALPH2_SIZE][CDF3_SIZE], 
 
 // Decoder
 
-#endif //ARANS_ARANS_8_H
+#endif //ARANS_ARANS_2x2x4_H

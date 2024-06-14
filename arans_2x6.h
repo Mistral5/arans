@@ -1,5 +1,5 @@
-#ifndef ARANS_ARANS_8_H
-#define ARANS_ARANS_H
+#ifndef ARANS_ARANS_2x6_H
+#define ARANS_ARANS_2x6_H
 
 //process configuration
 #ifdef ARANS_STATIC
@@ -378,4 +378,4 @@ static unsigned char modSecondSymb(const uint16_t (*cdf)[CDF2_SIZE], unsigned ch
 
 // Decoder
 
-#endif //ARANS_ARANS_8_H
+#endif //ARANS_ARANS_2x6_H

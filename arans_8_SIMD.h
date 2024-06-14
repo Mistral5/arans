@@ -1,5 +1,5 @@
-#ifndef ARANS_ARANS_8_H
-#define ARANS_ARANS_H
+#ifndef ARANS_ARANS_8_SIMD_H
+#define ARANS_ARANS_8_SIMD_H
 
 //process configuration
 #ifdef ARANS_STATIC
@@ -368,4 +368,4 @@ static unsigned char modSymb(const uint16_t *cdf, const uint16_t prb) {
 
 // Decoder
 
-#endif //ARANS_ARANS_8_H
+#endif //ARANS_ARANS_8_SIMD_H

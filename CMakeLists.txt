@@ -15,5 +15,7 @@ add_executable(arans
         arans_2x3x3.h
         arans_2x2x2x2.h
         arans_3x5_clear.h
-        arans_SIMD.h
+        arans_3x5_clear_one_1D_arr.h
+        arans_3x5_clear_two_1D_arr.h
+        arans_8_SIMD.h
 )

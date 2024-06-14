@@ -6,14 +6,16 @@
 
 #include "platform.h"
 
-#include "arans_8.h"
+//#include "arans_8.h"
 //#include "arans_4x4.h"
-//#include "arans_3x5.h"
+#include "arans_3x5.h"
 //#include "arans_2x6.h"
 //#include "arans_2x3x3.h"
 //#include "arans_2x2x4.h"
 //#include "arans_2x2x2x2.h"
 //#include "arans_3x5_clear.h"
+//#include "arans_3x5_clear_arr.h"
+//#include "arans_3x5_clear_arr1.h"
 //#include "arans_SIMD.h"
 
 //main function
