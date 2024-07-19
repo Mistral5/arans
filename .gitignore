@@ -54,5 +54,6 @@ dkms.conf
 # General
 cmake-build-*/
 out/
+.vs/
 .idea/
 CMakePresets.json
